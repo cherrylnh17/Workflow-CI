@@ -123,16 +123,18 @@ jobs:
       - name: Install MLflow and DagsHub
         run: pip install mlflow==${{ env.MLFLOW_VERSION }} dagshub
 
-      - name: Get latest Run ID from DagsHub and build Docker
+      - name: Get latest Run ID and download artifacts
         env:
           MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
           MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
           MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
-          RUN_ID=$(python - <<'EOF'
+          python - <<'EOF'
           import mlflow, os
-          mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
+
+          tracking_uri = os.environ["MLFLOW_TRACKING_URI"]
+          mlflow.set_tracking_uri(tracking_uri)
+
           client = mlflow.tracking.MlflowClient()
           exp = client.get_experiment_by_name("HateSpeech_Classification")
           runs = client.search_runs(
@@ -140,16 +142,23 @@ jobs:
               order_by=["start_time DESC"],
               max_results=1
           )
-          print(runs[0].info.run_id)
+          run_id = runs[0].info.run_id
+          print(f"Run ID: {run_id}")
+
+          local_path = client.download_artifacts(run_id, "model", "/tmp/mlflow_model")
+          print(f"Downloaded to: {local_path}")
           EOF
-          )
 
-          echo "Run ID: ${RUN_ID}"
-          MODEL_URI="runs:/${RUN_ID}/model"
+      - name: Build Docker image from local artifacts
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
           IMAGE_NAME="${DOCKERHUB_USERNAME}/hate-speech-classifier:latest"
+          MODEL_PATH="/tmp/mlflow_model/model"
 
+          echo "Building Docker image from: ${MODEL_PATH}"
           mlflow models build-docker \
-            --model-uri "${MODEL_URI}" \
+            --model-uri "${MODEL_PATH}" \
             --name "${IMAGE_NAME}"
 
       - name: Log in to Docker Hub
