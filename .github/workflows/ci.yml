@@ -7,7 +7,7 @@ on:
     paths:
       - 'MLProject/**'
       - '.github/workflows/ci.yml'
-  workflow_dispatch:  # Trigger manual
+  workflow_dispatch:  
 
 env:
   PYTHON_VERSION: "3.12.7"
@@ -47,7 +47,7 @@ jobs:
       - name: Run preprocessing
         run: |
           cd MLProject
-          python automate_NamaSiswa.py \
+          python automate_Luqman.py \
             --data data.csv \
             --kamusalay new_kamusalay.csv \
             --output data_preprocessing \
