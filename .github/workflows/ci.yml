@@ -99,39 +99,26 @@ jobs:
             --env-manager=local \
             -P data_dir=data_preprocessing
 
-      - name: Download model from DagsHub to local
-        env:
-          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
-          MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
-          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+      - name: Copy model from local mlruns
         run: |
           python - <<'EOF'
-          import mlflow, os, time
+          import os, shutil, glob
 
+          # Cari model di mlruns lokal
+          pattern = "MLProject/mlruns/*/*/artifacts/model"
+          matches = glob.glob(pattern)
+
+          if not matches:
+              raise FileNotFoundError(f"No model found at: {pattern}")
+
+          # Ambil yang terbaru
+          latest = max(matches, key=os.path.getmtime)
+          print(f"Found model at: {latest}")
+
+          dst = "/tmp/mlflow_model/model"
           os.makedirs("/tmp/mlflow_model", exist_ok=True)
-          mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
-
-          client = mlflow.tracking.MlflowClient()
-          exp = client.get_experiment_by_name("HateSpeech_Classification")
-          runs = client.search_runs(
-              exp.experiment_id,
-              order_by=["start_time DESC"],
-              max_results=1
-          )
-          run_id = runs[0].info.run_id
-          print(f"Run ID: {run_id}")
-
-          for attempt in range(5):
-              try:
-                  local_path = client.download_artifacts(run_id, "model", "/tmp/mlflow_model")
-                  print(f"Downloaded to: {local_path}")
-                  break
-              except Exception as e:
-                  print(f"Attempt {attempt+1} failed: {e}")
-                  if attempt < 4:
-                      time.sleep(30)
-                  else:
-                      raise
+          shutil.copytree(latest, dst)
+          print(f"Copied to: {dst}")
           EOF
 
       - name: Upload model artifact
