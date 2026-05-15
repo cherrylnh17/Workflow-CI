@@ -87,46 +87,68 @@ jobs:
           name: data_preprocessing
           path: MLProject/data_preprocessing/
 
-      - name: Run MLflow Project
-        env:
-          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
-          MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
-          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
-          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+      - name: Run MLflow Project (local tracking)
         run: |
           cd MLProject
           mlflow run . \
             --env-manager=local \
             -P data_dir=data_preprocessing
 
-      - name: Debug mlruns structure
-        run: |
-          find MLProject/mlruns -type f | head -50 || echo "mlruns kosong atau tidak ada"
-          echo "---"
-          ls -la MLProject/ || true
-          echo "---"
-          ls -la MLProject/mlruns/ || true
-
-      - name: Copy model from local mlruns
+      - name: Log to DagsHub and copy model
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
         run: |
           python - <<'EOF'
-          import os, shutil, glob
+          import mlflow, os, shutil, glob
 
-          # Cari model di mlruns lokal
-          pattern = "MLProject/mlruns/*/*/artifacts/model"
-          matches = glob.glob(pattern)
+          # 1. Cari model di local mlruns (coba 2 level kedalaman)
+          for pattern in [
+              "MLProject/mlruns/*/*/artifacts/model",
+              "MLProject/mlruns/*/*/*/artifacts/model",
+          ]:
+              matches = glob.glob(pattern)
+              if matches:
+                  break
 
           if not matches:
-              raise FileNotFoundError(f"No model found at: {pattern}")
+              raise FileNotFoundError("Tidak ada model ditemukan di mlruns lokal")
 
-          # Ambil yang terbaru
           latest = max(matches, key=os.path.getmtime)
-          print(f"Found model at: {latest}")
+          print(f"Model ditemukan di: {latest}")
 
-          dst = "/tmp/mlflow_model/model"
+          # 2. Copy model ke /tmp
           os.makedirs("/tmp/mlflow_model", exist_ok=True)
-          shutil.copytree(latest, dst)
-          print(f"Copied to: {dst}")
+          shutil.copytree(latest, "/tmp/mlflow_model/model")
+          print("Model berhasil di-copy ke /tmp/mlflow_model/model")
+
+          # 3. Baca metrics & params dari local run
+          local_uri = "file://" + os.path.abspath("MLProject/mlruns")
+          mlflow.set_tracking_uri(local_uri)
+          client_local = mlflow.tracking.MlflowClient()
+
+          exp = client_local.get_experiment_by_name("HateSpeech_Classification")
+          runs = client_local.search_runs(
+              exp.experiment_id,
+              order_by=["start_time DESC"],
+              max_results=1
+          )
+          local_run = runs[0]
+          print(f"Local Run ID: {local_run.info.run_id}")
+          print(f"Metrics: {local_run.data.metrics}")
+
+          # 4. Log ke DagsHub
+          mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
+          mlflow.set_experiment("HateSpeech_Classification")
+
+          with mlflow.start_run():
+              for key, value in local_run.data.metrics.items():
+                  mlflow.log_metric(key, value)
+              for key, value in local_run.data.params.items():
+                  mlflow.log_param(key, value)
+              mlflow.log_artifacts("/tmp/mlflow_model/model", artifact_path="model")
+              print("Berhasil log ke DagsHub")
           EOF
 
       - name: Upload model artifact
