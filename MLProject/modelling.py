@@ -45,7 +45,7 @@ def train():
 
     mlflow.sklearn.autolog()
 
-    with mlflow.start_run(run_name='LogisticRegression_baseline', nested=True):
+    with mlflow.start_run(run_name='LogisticRegression_baseline'):
         logger.info("Memulai training Logistic Regression...")
 
         model = LogisticRegression(
