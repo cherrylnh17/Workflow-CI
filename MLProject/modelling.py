@@ -35,14 +35,15 @@ def load_data(data_dir: str):
 def train(data_dir: str = 'data_preprocessing'):
     X_train, X_test, y_train, y_test = load_data(data_dir)
 
+    # Selalu tracking ke lokal agar mlruns/ terbentuk di disk
+    # CI akan log ulang ke DagsHub via step terpisah
+    mlflow.set_tracking_uri("mlruns")
     mlflow.set_experiment(EXPERIMENT_NAME)
 
-    # autolog handles run context — log model otomatis termasuk MLmodel file
     mlflow.sklearn.autolog(
         log_models=True,
         log_input_examples=False,
         log_model_signatures=True,
-        registered_model_name="HateSpeech_LogisticRegression"
     )
 
     logger.info("Memulai training Logistic Regression...")
@@ -54,7 +55,6 @@ def train(data_dir: str = 'data_preprocessing'):
         random_state=42,
         class_weight='balanced'
     )
-    # autolog mendeteksi fit() dan otomatis log model + params
     model.fit(X_train, y_train)
 
     y_pred = model.predict(X_test)
@@ -66,7 +66,6 @@ def train(data_dir: str = 'data_preprocessing'):
     f1   = f1_score(y_test, y_pred, average='weighted', zero_division=0)
     auc  = roc_auc_score(y_test, y_prob)
 
-    # Log metrics tambahan ke run yang sudah aktif dari mlflow run .
     mlflow.log_metric('test_accuracy', acc)
     mlflow.log_metric('test_precision_weighted', prec)
     mlflow.log_metric('test_recall_weighted', rec)
