@@ -87,11 +87,10 @@ jobs:
           name: data_preprocessing
           path: MLProject/data_preprocessing/
 
-      - name: Run training (local tracking)
-        # Tidak set MLFLOW_TRACKING_URI agar mlruns terbentuk lokal
+      - name: Run MLflow Project
         run: |
           cd MLProject
-          python modelling.py --data_dir data_preprocessing
+          mlflow run . --experiment-name HateSpeech_Classification
 
       - name: Copy model from local mlruns
         run: |

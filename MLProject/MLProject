@@ -5,7 +5,5 @@ conda_env: conda.yaml
 entry_points:
   main:
     parameters:
-      data_dir:
-        type: str
-        default: "data_preprocessing"
+      data_dir: {type: str, default: "data_preprocessing"}
     command: "python modelling.py --data_dir {data_dir}"
