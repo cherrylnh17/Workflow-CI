@@ -107,51 +107,55 @@ jobs:
           retention-days: 7
 
   build_docker:
-    name: Build & Push Docker Image
+    name: Build and Push Docker Image
     runs-on: ubuntu-latest
     needs: training
-
+ 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
+ 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
+ 
       - name: Install MLflow
         run: pip install mlflow==${{ env.MLFLOW_VERSION }}
-
+ 
       - name: Download MLflow artifacts
         uses: actions/download-artifact@v4
         with:
           name: mlflow_artifacts
           path: MLProject/mlruns/
-
+ 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build Docker image with MLflow
+ 
+      - name: Get latest run ID and build Docker image
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
-          # Ambil run_id terbaru dari mlruns
-          RUN_ID=$(ls MLProject/mlruns/0/ | grep -v 'meta.yaml' | head -1)
-          MODEL_URI="MLProject/mlruns/0/${RUN_ID}/artifacts/model"
+          EXP_ID=$(ls MLProject/mlruns/ | grep -v "models" | grep -E "^[0-9]+$" | head -1)
+          RUN_ID=$(ls MLProject/mlruns/${EXP_ID}/ | grep -v "meta.yaml" | head -1)
+          MODEL_URI="MLProject/mlruns/${EXP_ID}/${RUN_ID}/artifacts/model"
           IMAGE_NAME="${DOCKERHUB_USERNAME}/hate-speech-classifier:latest"
-
-          echo "Building Docker image dari model: ${MODEL_URI}"
+ 
+          echo "Experiment ID : ${EXP_ID}"
+          echo "Run ID        : ${RUN_ID}"
+          echo "Model URI     : ${MODEL_URI}"
+          echo "Image         : ${IMAGE_NAME}"
+ 
           mlflow models build-docker \
             --model-uri "${MODEL_URI}" \
             --name "${IMAGE_NAME}"
-
-      - name: Push Docker image to Docker Hub
+ 
+      - name: Push Docker image
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
           docker push "${DOCKERHUB_USERNAME}/hate-speech-classifier:latest"
-          echo "Image berhasil dipush: ${DOCKERHUB_USERNAME}/hate-speech-classifier:latest"
+          echo "Done: ${DOCKERHUB_USERNAME}/hate-speech-classifier:latest"
