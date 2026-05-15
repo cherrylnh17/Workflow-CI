@@ -70,16 +70,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Conda
+        uses: conda-incubator/setup-miniconda@v3
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          auto-activate-base: true
+          auto-update-conda: false
 
-      - name: Install dependencies
+      - name: Install MLflow
+        shell: bash -el {0}
         run: |
-          python -m pip install --upgrade pip
-          pip install pandas numpy scipy scikit-learn mlflow==${{ env.MLFLOW_VERSION }} \
-                      nltk joblib matplotlib seaborn dagshub
+          pip install mlflow==${{ env.MLFLOW_VERSION }} dagshub
 
       - name: Download preprocessed data
         uses: actions/download-artifact@v4
@@ -88,9 +89,10 @@ jobs:
           path: MLProject/data_preprocessing/
 
       - name: Run MLflow Project
+        shell: bash -el {0}
         run: |
           cd MLProject
-          mlflow run . --experiment-name HateSpeech_Classification
+          mlflow run . --experiment-name HateSpeech_Classification --env-manager=conda
 
       - name: Copy model from local mlruns
         run: |
