@@ -103,50 +103,41 @@ jobs:
           python - <<'EOF'
           import mlflow, os, shutil, glob
 
-          # 1. Cari model di local mlruns (coba 2 level kedalaman)
-          for pattern in [
-              "MLProject/mlruns/*/*/artifacts/model",
-              "MLProject/mlruns/*/*/*/artifacts/model",
-          ]:
-              matches = glob.glob(pattern)
-              if matches:
-                  break
+          # Gunakan Run ID langsung dari mlflow run output
+          # mlruns ada di dalam MLProject/ karena cd MLProject sebelum mlflow run
+          base = "MLProject/mlruns"
 
-          if not matches:
-              raise FileNotFoundError("Tidak ada model ditemukan di mlruns lokal")
+          # Debug: tampilkan semua yang ada
+          print("=== Isi mlruns ===")
+          for root, dirs, files in os.walk(base):
+              level = root.replace(base, '').count(os.sep)
+              indent = ' ' * 2 * level
+              print(f"{indent}{os.path.basename(root)}/")
+              if level < 4:
+                  for f in files:
+                      print(f"{indent}  {f}")
 
-          latest = max(matches, key=os.path.getmtime)
-          print(f"Model ditemukan di: {latest}")
+          # Cari MLmodel file (penanda lokasi model)
+          mlmodel_files = glob.glob(f"{base}/**/MLmodel", recursive=True)
+          print(f"\nMLmodel files: {mlmodel_files}")
 
-          # 2. Copy model ke /tmp
+          if not mlmodel_files:
+              raise FileNotFoundError("Tidak ada MLmodel ditemukan")
+
+          # Ambil folder model (parent dari MLmodel)
+          model_dir = os.path.dirname(mlmodel_files[0])
+          print(f"Model dir: {model_dir}")
+
+          # Copy ke /tmp
           os.makedirs("/tmp/mlflow_model", exist_ok=True)
-          shutil.copytree(latest, "/tmp/mlflow_model/model")
+          shutil.copytree(model_dir, "/tmp/mlflow_model/model")
           print("Model berhasil di-copy ke /tmp/mlflow_model/model")
 
-          # 3. Baca metrics & params dari local run
-          local_uri = "file://" + os.path.abspath("MLProject/mlruns")
-          mlflow.set_tracking_uri(local_uri)
-          client_local = mlflow.tracking.MlflowClient()
-
-          exp = client_local.get_experiment_by_name("HateSpeech_Classification")
-          runs = client_local.search_runs(
-              exp.experiment_id,
-              order_by=["start_time DESC"],
-              max_results=1
-          )
-          local_run = runs[0]
-          print(f"Local Run ID: {local_run.info.run_id}")
-          print(f"Metrics: {local_run.data.metrics}")
-
-          # 4. Log ke DagsHub
+          # Log ke DagsHub
           mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
           mlflow.set_experiment("HateSpeech_Classification")
 
           with mlflow.start_run():
-              for key, value in local_run.data.metrics.items():
-                  mlflow.log_metric(key, value)
-              for key, value in local_run.data.params.items():
-                  mlflow.log_param(key, value)
               mlflow.log_artifacts("/tmp/mlflow_model/model", artifact_path="model")
               print("Berhasil log ke DagsHub")
           EOF
