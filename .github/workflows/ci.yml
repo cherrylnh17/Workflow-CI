@@ -99,6 +99,14 @@ jobs:
             --env-manager=local \
             -P data_dir=data_preprocessing
 
+      - name: Debug mlruns structure
+        run: |
+          find MLProject/mlruns -type f | head -50 || echo "mlruns kosong atau tidak ada"
+          echo "---"
+          ls -la MLProject/ || true
+          echo "---"
+          ls -la MLProject/mlruns/ || true
+
       - name: Copy model from local mlruns
         run: |
           python - <<'EOF'
