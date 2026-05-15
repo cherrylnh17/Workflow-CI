@@ -12,7 +12,6 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score,
     f1_score, roc_auc_score, classification_report,
-    confusion_matrix
 )
 
 logging.basicConfig(
@@ -39,12 +38,14 @@ def train(data_dir: str = 'data_preprocessing'):
 
     mlflow.set_experiment(EXPERIMENT_NAME)
 
-    # Nonaktifkan autolog agar tidak bentrok dengan log_model manual
+    # Nonaktifkan autolog agar tidak bentrok
     mlflow.sklearn.autolog(disable=True)
 
     logger.info("Memulai training Logistic Regression...")
 
-    with mlflow.start_run():
+    # Gunakan run yang sudah ada dari 'mlflow run .' 
+    # nested=True agar tidak bentrok dengan parent run
+    with mlflow.start_run(nested=True):
         model = LogisticRegression(
             C=1.0,
             max_iter=1000,
@@ -77,7 +78,7 @@ def train(data_dir: str = 'data_preprocessing'):
         mlflow.log_metric('test_f1_weighted', f1)
         mlflow.log_metric('test_roc_auc', auc)
 
-        # Log model — INI YANG PENTING, buat MLmodel file di artifacts/
+        # Log model — membuat MLmodel file di artifacts/model/
         mlflow.sklearn.log_model(
             sk_model=model,
             artifact_path="model",
