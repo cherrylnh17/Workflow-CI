@@ -8,14 +8,4 @@ entry_points:
       data_dir:
         type: str
         default: "data_preprocessing"
-      dagshub:
-        type: str
-        default: "false"
-      owner:
-        type: str
-        default: ""
-      repo:
-        type: str
-        default: ""
-    command: >
-      python modelling.py
+    command: "python modelling.py --data_dir {data_dir}"

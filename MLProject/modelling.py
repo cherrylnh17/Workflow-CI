@@ -1,5 +1,6 @@
 import os
 import logging
+import argparse
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
@@ -14,20 +15,16 @@ from sklearn.metrics import (
     confusion_matrix
 )
 
-# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Konfigurasi
-DATA_DIR = 'data_preprocessing'
 EXPERIMENT_NAME = 'HateSpeech_Classification'
-MODEL_NAME = 'LogisticRegression_HateSpeech'
 
-# Load data
-def load_preprocessed_data(data_dir: str):
+
+def load_data(data_dir: str):
     logger.info(f"Memuat data dari: {data_dir}")
     X_train = sp.load_npz(os.path.join(data_dir, 'X_train_tfidf.npz'))
     X_test  = sp.load_npz(os.path.join(data_dir, 'X_test_tfidf.npz'))
@@ -37,48 +34,59 @@ def load_preprocessed_data(data_dir: str):
     return X_train, X_test, y_train, y_test
 
 
-# Main training
-def train():
-    X_train, X_test, y_train, y_test = load_preprocessed_data(DATA_DIR)
+def train(data_dir: str = 'data_preprocessing'):
+    X_train, X_test, y_train, y_test = load_data(data_dir)
 
+    # Set experiment
     mlflow.set_experiment(EXPERIMENT_NAME)
 
+    # Aktifkan autolog
     mlflow.sklearn.autolog()
 
-    with mlflow.start_run(run_name='LogisticRegression_baseline'):
-        logger.info("Memulai training Logistic Regression...")
+    logger.info("Memulai training Logistic Regression...")
 
-        model = LogisticRegression(
-            C=1.0,
-            max_iter=1000,
-            solver='lbfgs',
-            random_state=42,
-            class_weight='balanced'
-        )
-        model.fit(X_train, y_train)
+    model = LogisticRegression(
+        C=1.0,
+        max_iter=1000,
+        solver='lbfgs',
+        random_state=42,
+        class_weight='balanced'
+    )
+    model.fit(X_train, y_train)
 
-        # Evaluasi
-        y_pred = model.predict(X_test)
-        y_prob = model.predict_proba(X_test)[:, 1]
+    y_pred = model.predict(X_test)
+    y_prob = model.predict_proba(X_test)[:, 1]
 
-        acc  = accuracy_score(y_test, y_pred)
-        prec = precision_score(y_test, y_pred, average='weighted')
-        rec  = recall_score(y_test, y_pred, average='weighted')
-        f1   = f1_score(y_test, y_pred, average='weighted')
-        auc  = roc_auc_score(y_test, y_prob)
+    acc  = accuracy_score(y_test, y_pred)
+    prec = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+    rec  = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+    f1   = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+    auc  = roc_auc_score(y_test, y_prob)
 
-        logger.info(f"Accuracy : {acc:.4f}")
-        logger.info(f"Precision: {prec:.4f}")
-        logger.info(f"Recall   : {rec:.4f}")
-        logger.info(f"F1-Score : {f1:.4f}")
-        logger.info(f"ROC-AUC  : {auc:.4f}")
+    # Log metrik tambahan secara manual
+    mlflow.log_metric('test_accuracy', acc)
+    mlflow.log_metric('test_precision_weighted', prec)
+    mlflow.log_metric('test_recall_weighted', rec)
+    mlflow.log_metric('test_f1_weighted', f1)
+    mlflow.log_metric('test_roc_auc', auc)
 
-        print("\n=== Classification Report ===")
-        print(classification_report(y_test, y_pred,
-                                    target_names=['Non-HS', 'HS']))
+    logger.info(f"Accuracy : {acc:.4f}")
+    logger.info(f"Precision: {prec:.4f}")
+    logger.info(f"Recall   : {rec:.4f}")
+    logger.info(f"F1-Score : {f1:.4f}")
+    logger.info(f"ROC-AUC  : {auc:.4f}")
 
-    logger.info("Training selesai. Buka MLflow UI dengan: mlflow ui")
+    print("\n=== Classification Report ===")
+    print(classification_report(y_test, y_pred,
+                                target_names=['Non-HS', 'HS']))
+
+    logger.info("Training selesai!")
 
 
 if __name__ == '__main__':
-    train()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--data_dir', type=str,
+                        default='data_preprocessing',
+                        help='Path ke folder preprocessing')
+    args = parser.parse_args()
+    train(data_dir=args.data_dir)
