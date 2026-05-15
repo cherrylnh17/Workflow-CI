@@ -1,0 +1,21 @@
+name: HateSpeech_Classification
+
+conda_env: conda.yaml
+
+entry_points:
+  main:
+    parameters:
+      data_dir:
+        type: str
+        default: "data_preprocessing"
+      dagshub:
+        type: str
+        default: "false"
+      owner:
+        type: str
+        default: ""
+      repo:
+        type: str
+        default: ""
+    command: >
+      python modelling.py

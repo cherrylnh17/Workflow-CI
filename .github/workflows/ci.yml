@@ -1,0 +1,155 @@
+name: CI - Hate Speech Model Training
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'MLProject/**'
+      - '.github/workflows/ci.yml'
+  workflow_dispatch:  # Trigger manual
+
+env:
+  PYTHON_VERSION: "3.12.7"
+  MLFLOW_VERSION: "2.19.0"
+
+jobs:
+  preprocessing:
+    name: Data Preprocessing
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('MLProject/conda.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy scipy scikit-learn nltk joblib mlflow==${{ env.MLFLOW_VERSION }}
+
+      - name: Download NLTK resources
+        run: |
+          python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('punkt_tab')"
+
+      - name: Run preprocessing
+        run: |
+          cd MLProject
+          python automate_NamaSiswa.py \
+            --data data.csv \
+            --kamusalay new_kamusalay.csv \
+            --output data_preprocessing \
+            --test_size 0.2 \
+            --max_features 10000
+
+      - name: Upload preprocessed data artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: data_preprocessing
+          path: MLProject/data_preprocessing/
+          retention-days: 7
+
+  training:
+    name: Model Training
+    runs-on: ubuntu-latest
+    needs: preprocessing
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy scipy scikit-learn mlflow==${{ env.MLFLOW_VERSION }} \
+                      nltk joblib matplotlib seaborn dagshub
+
+      - name: Download preprocessed data
+        uses: actions/download-artifact@v4
+        with:
+          name: data_preprocessing
+          path: MLProject/data_preprocessing/
+
+      - name: Run MLflow Project
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          cd MLProject
+          mlflow run . \
+            --env-manager=local \
+            -P data_dir=data_preprocessing
+
+      - name: Upload MLflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlflow_artifacts
+          path: MLProject/mlruns/
+          retention-days: 7
+
+  build_docker:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: training
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install MLflow
+        run: pip install mlflow==${{ env.MLFLOW_VERSION }}
+
+      - name: Download MLflow artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: mlflow_artifacts
+          path: MLProject/mlruns/
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build Docker image with MLflow
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          # Ambil run_id terbaru dari mlruns
+          RUN_ID=$(ls MLProject/mlruns/0/ | grep -v 'meta.yaml' | head -1)
+          MODEL_URI="MLProject/mlruns/0/${RUN_ID}/artifacts/model"
+          IMAGE_NAME="${DOCKERHUB_USERNAME}/hate-speech-classifier:latest"
+
+          echo "Building Docker image dari model: ${MODEL_URI}"
+          mlflow models build-docker \
+            --model-uri "${MODEL_URI}" \
+            --name "${IMAGE_NAME}"
+
+      - name: Push Docker image to Docker Hub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          docker push "${DOCKERHUB_USERNAME}/hate-speech-classifier:latest"
+          echo "Image berhasil dipush: ${DOCKERHUB_USERNAME}/hate-speech-classifier:latest"
