@@ -196,6 +196,7 @@ jobs:
           mlflow models build-docker \
             --model-uri "${MODEL_PATH}" \
             --name "${IMAGE_NAME}"
+            --env-manager local
 
       - name: Push Docker image
         env:
