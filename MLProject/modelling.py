@@ -37,50 +37,64 @@ def load_data(data_dir: str):
 def train(data_dir: str = 'data_preprocessing'):
     X_train, X_test, y_train, y_test = load_data(data_dir)
 
-    # Set experiment
     mlflow.set_experiment(EXPERIMENT_NAME)
 
-    # Aktifkan autolog
-    mlflow.sklearn.autolog()
+    # Nonaktifkan autolog agar tidak bentrok dengan log_model manual
+    mlflow.sklearn.autolog(disable=True)
 
     logger.info("Memulai training Logistic Regression...")
 
-    model = LogisticRegression(
-        C=1.0,
-        max_iter=1000,
-        solver='lbfgs',
-        random_state=42,
-        class_weight='balanced'
-    )
-    model.fit(X_train, y_train)
+    with mlflow.start_run():
+        model = LogisticRegression(
+            C=1.0,
+            max_iter=1000,
+            solver='lbfgs',
+            random_state=42,
+            class_weight='balanced'
+        )
+        model.fit(X_train, y_train)
 
-    y_pred = model.predict(X_test)
-    y_prob = model.predict_proba(X_test)[:, 1]
+        y_pred = model.predict(X_test)
+        y_prob = model.predict_proba(X_test)[:, 1]
 
-    acc  = accuracy_score(y_test, y_pred)
-    prec = precision_score(y_test, y_pred, average='weighted', zero_division=0)
-    rec  = recall_score(y_test, y_pred, average='weighted', zero_division=0)
-    f1   = f1_score(y_test, y_pred, average='weighted', zero_division=0)
-    auc  = roc_auc_score(y_test, y_prob)
+        acc  = accuracy_score(y_test, y_pred)
+        prec = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+        rec  = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+        f1   = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+        auc  = roc_auc_score(y_test, y_prob)
 
-    # Log metrik tambahan secara manual
-    mlflow.log_metric('test_accuracy', acc)
-    mlflow.log_metric('test_precision_weighted', prec)
-    mlflow.log_metric('test_recall_weighted', rec)
-    mlflow.log_metric('test_f1_weighted', f1)
-    mlflow.log_metric('test_roc_auc', auc)
+        # Log params
+        mlflow.log_param('C', 1.0)
+        mlflow.log_param('max_iter', 1000)
+        mlflow.log_param('solver', 'lbfgs')
+        mlflow.log_param('class_weight', 'balanced')
+        mlflow.log_param('data_dir', data_dir)
 
-    logger.info(f"Accuracy : {acc:.4f}")
-    logger.info(f"Precision: {prec:.4f}")
-    logger.info(f"Recall   : {rec:.4f}")
-    logger.info(f"F1-Score : {f1:.4f}")
-    logger.info(f"ROC-AUC  : {auc:.4f}")
+        # Log metrics
+        mlflow.log_metric('test_accuracy', acc)
+        mlflow.log_metric('test_precision_weighted', prec)
+        mlflow.log_metric('test_recall_weighted', rec)
+        mlflow.log_metric('test_f1_weighted', f1)
+        mlflow.log_metric('test_roc_auc', auc)
 
-    print("\n=== Classification Report ===")
-    print(classification_report(y_test, y_pred,
-                                target_names=['Non-HS', 'HS']))
+        # Log model — INI YANG PENTING, buat MLmodel file di artifacts/
+        mlflow.sklearn.log_model(
+            sk_model=model,
+            artifact_path="model",
+            registered_model_name="HateSpeech_LogisticRegression"
+        )
 
-    logger.info("Training selesai!")
+        logger.info(f"Accuracy : {acc:.4f}")
+        logger.info(f"Precision: {prec:.4f}")
+        logger.info(f"Recall   : {rec:.4f}")
+        logger.info(f"F1-Score : {f1:.4f}")
+        logger.info(f"ROC-AUC  : {auc:.4f}")
+
+        print("\n=== Classification Report ===")
+        print(classification_report(y_test, y_pred,
+                                    target_names=['Non-HS', 'HS']))
+
+        logger.info("Training selesai!")
 
 
 if __name__ == '__main__':
