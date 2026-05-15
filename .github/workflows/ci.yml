@@ -132,6 +132,8 @@ jobs:
           python - <<'EOF'
           import mlflow, os
 
+          os.makedirs("/tmp/mlflow_model", exist_ok=True)
+
           tracking_uri = os.environ["MLFLOW_TRACKING_URI"]
           mlflow.set_tracking_uri(tracking_uri)
 
