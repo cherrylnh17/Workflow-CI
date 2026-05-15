@@ -110,49 +110,54 @@ jobs:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
     needs: training
- 
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
- 
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
- 
-      - name: Install MLflow
-        run: pip install mlflow==${{ env.MLFLOW_VERSION }}
- 
-      - name: Download MLflow artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: mlflow_artifacts
-          path: MLProject/mlruns/
- 
+
+      - name: Install MLflow and DagsHub
+        run: pip install mlflow==${{ env.MLFLOW_VERSION }} dagshub
+
+      - name: Get latest Run ID from DagsHub and build Docker
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          RUN_ID=$(python - <<'EOF'
+          import mlflow, os
+          mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
+          client = mlflow.tracking.MlflowClient()
+          exp = client.get_experiment_by_name("HateSpeech_Classification")
+          runs = client.search_runs(
+              exp.experiment_id,
+              order_by=["start_time DESC"],
+              max_results=1
+          )
+          print(runs[0].info.run_id)
+          EOF
+          )
+
+          echo "Run ID: ${RUN_ID}"
+          MODEL_URI="runs:/${RUN_ID}/model"
+          IMAGE_NAME="${DOCKERHUB_USERNAME}/hate-speech-classifier:latest"
+
+          mlflow models build-docker \
+            --model-uri "${MODEL_URI}" \
+            --name "${IMAGE_NAME}"
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
- 
-      - name: Get latest run ID and build Docker image
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-        run: |
-          EXP_ID=$(ls MLProject/mlruns/ | grep -v "models" | grep -E "^[0-9]+$" | head -1)
-          RUN_ID=$(ls MLProject/mlruns/${EXP_ID}/ | grep -v "meta.yaml" | head -1)
-          MODEL_URI="MLProject/mlruns/${EXP_ID}/${RUN_ID}/artifacts/model"
-          IMAGE_NAME="${DOCKERHUB_USERNAME}/hate-speech-classifier:latest"
- 
-          echo "Experiment ID : ${EXP_ID}"
-          echo "Run ID        : ${RUN_ID}"
-          echo "Model URI     : ${MODEL_URI}"
-          echo "Image         : ${IMAGE_NAME}"
- 
-          mlflow models build-docker \
-            --model-uri "${MODEL_URI}" \
-            --name "${IMAGE_NAME}"
- 
+
       - name: Push Docker image
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
